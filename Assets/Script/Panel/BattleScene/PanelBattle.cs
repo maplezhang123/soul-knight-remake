@@ -17,6 +17,9 @@ namespace BattleScene
         private TextMeshProUGUI TextArmor;
         private TextMeshProUGUI TextMoney;
         private TextMeshProUGUI TextMiddle;
+        private TextMeshProUGUI TextArea;
+        private int lastBigStage;
+        private Coroutine areaCoroutine;
 
         private MemoryModel m_MemoryModel;
         private PlayableDirector TimeLine;
@@ -43,6 +46,7 @@ namespace BattleScene
             TextArmor = UnityTool.Instance.GetComponentFromChild<TextMeshProUGUI>(SliderArmor.gameObject, "Text");
             TextMoney = UnityTool.Instance.GetComponentFromChild<TextMeshProUGUI>(m_GameObject, "TextMoney");
             TextMiddle = UnityTool.Instance.GetComponentFromChild<TextMeshProUGUI>(m_GameObject, "TextMiddle");
+            TextArea = UnityTool.Instance.GetComponentFromChild<TextMeshProUGUI>(m_GameObject, "TextArea");
             EventCenter.Instance.RegisterObserver<Room>(EventType.OnPlayerEnterBossRoom, (enterRoom) =>
             {
                 EventCenter.Instance.NotisfyObserver(EventType.OnPause);
@@ -71,12 +75,20 @@ namespace BattleScene
                     GameMediator.Instance.GetController<PlayerController>().Player.EnterBattleScene();
                     GameMediator.Instance.GetController<PlayerController>().Player.m_Attr.isRun = true;
                 }, (float)TimeLine.duration);
-                TextMiddle.text = GetStageText();
+                TextMiddle.text = MemoryModelCommand.Instance.GetStageDisplayName();
+                lastBigStage = MemoryModelCommand.Instance.GetBigStage();
+                ShowAreaName();
             }
         }
         protected override void OnUpdate()
         {
             base.OnUpdate();
+            int currentBigStage = MemoryModelCommand.Instance.GetBigStage();
+            if (currentBigStage != lastBigStage)
+            {
+                lastBigStage = currentBigStage;
+                ShowAreaName();
+            }
             if (GetPlayer() != null)
             {
                 SliderHp.value = GetPlayer().m_Attr.CurrentHp / (float)GetPlayer().m_Attr.m_ShareAttr.MaxHp;
@@ -95,6 +107,29 @@ namespace BattleScene
         private IPlayer GetPlayer()
         {
             return GameMediator.Instance.GetController<PlayerController>().Player;
+        }
+        private void ShowAreaName()
+        {
+            if (TextArea == null)
+            {
+                return;
+            }
+            TextArea.text = MemoryModelCommand.Instance.GetAreaDisplayName();
+            TextArea.gameObject.SetActive(true);
+            if (areaCoroutine != null)
+            {
+                CoroutinePool.Instance.StopCoroutine(areaCoroutine);
+            }
+            areaCoroutine = CoroutinePool.Instance.StartCoroutine(HideAreaName());
+        }
+        private System.Collections.IEnumerator HideAreaName()
+        {
+            yield return new WaitForSeconds(2f);
+            if (TextArea != null)
+            {
+                TextArea.gameObject.SetActive(false);
+            }
+            areaCoroutine = null;
         }
         private string GetStageText()
         {

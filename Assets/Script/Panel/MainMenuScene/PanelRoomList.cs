@@ -12,6 +12,10 @@ public class PanelRoomList : IPanel
     private bool isFindRoomResponse;
     private bool isJoinRoomResponse;
     private MainPack pack;
+    private string GetDisplayRoomName(string roomId)
+    {
+        return roomId;
+    }
     public PanelRoomList(IPanel parent) : base(parent)
     {
         isShowPanelAfterExit = true;
@@ -124,7 +128,7 @@ public class PanelRoomList : IPanel
     {
         string text = "";
 
-        obj.transform.GetChild(0).GetComponent<TextMeshProUGUI>().text = pack.RoomName;
+        obj.transform.GetChild(0).GetComponent<TextMeshProUGUI>().text = GetDisplayRoomName(pack.RoomName);
         UnityTool.Instance.GetComponentFromChild<TextMeshProUGUI>(obj, "TextPlayerNum").text = pack.CurrentNum.ToString() + "/" + pack.MaxNum.ToString();
         switch (pack.RoomCode)
         {

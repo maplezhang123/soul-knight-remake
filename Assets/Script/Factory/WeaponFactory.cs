@@ -294,9 +294,33 @@ public class WeaponFactory
     {
         GameObject obj = Object.Instantiate(ProxyResourceFactory.Instance.Factory.GetWeapon(type));
         obj.name=type.ToString();
-        UnityTool.Instance.GetComponentFromChild<SpriteRenderer>(obj, type.ToString()).sortingLayerName = "Floor";
-        UnityTool.Instance.GetComponentFromChild<SpriteRenderer>(obj, type.ToString()).sortingOrder = 10;
-        UnityTool.Instance.GetComponentFromChild<BoxCollider2D>(obj, type.ToString()).enabled = true;
+        Transform child = obj.transform.Find(type.ToString());
+        SpriteRenderer renderer = null;
+        if (child != null)
+        {
+            renderer = child.GetComponent<SpriteRenderer>();
+        }
+        if (renderer == null)
+        {
+            renderer = obj.GetComponentInChildren<SpriteRenderer>(true);
+        }
+        if (renderer != null)
+        {
+            renderer.sortingLayerName = "Floor";
+            renderer.sortingOrder = 10;
+        }
+        else
+        {
+            Debug.LogError($"WeaponFactory.GetPlayerWeaponObj: missing SpriteRenderer for {type} (Assets/Resources/Prefabs/Weapons/{type}.prefab)");
+        }
+        if (child != null)
+        {
+            var collider = child.GetComponent<BoxCollider2D>();
+            if (collider != null)
+            {
+                collider.enabled = true;
+            }
+        }
         obj.transform.position = pos;
         return obj;
     }

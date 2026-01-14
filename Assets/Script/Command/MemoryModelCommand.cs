@@ -1,4 +1,4 @@
-﻿public class MemoryModelCommand : Singleton<MemoryModelCommand>
+public class MemoryModelCommand : Singleton<MemoryModelCommand>
 {
     private MemoryModel model;
     private MemoryModelCommand()
@@ -31,4 +31,27 @@
     {
         return model.Stage - (GetBigStage() - 1) * 5;
     }
+    public string GetStageDisplayName()
+    {
+        switch (model.Stage)
+        {
+            default:
+                return GetBigStage() + "-" + GetSmallStage();
+        }
+    }
+    public string GetAreaDisplayName()
+    {
+        switch (GetBigStage())
+        {
+            case 1:
+                return "教学楼";
+            case 2:
+                return "天台";
+            case 3:
+                return "储物间";
+            default:
+                return "第" + GetBigStage() + "区";
+        }
+    }
+
 }
