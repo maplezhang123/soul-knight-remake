@@ -645,3 +645,257 @@ EventCenter.Instance.RegisterObserver<Room>(EventType.OnPlayerEnterBattleRoom, (
 - 重构 Model/Command 职责 (2-3 小时)
 - 替换硬编码字符串为引用 (4-6 小时)
 - 引入数据绑定系统 (6-8 小时)
+
+---
+
+## 🔴 关于 SmallStage 固定为 1~5 的结构限制 (架构级约束)
+
+### 问题描述
+
+当前系统中，**SmallStage 被硬编码为 1~5 的固定范围**，这是一个深层次的架构约束，影响多个子系统。
+
+**核心限制：**
+- SmallStage 5 被特殊标记为 **Boss 关**
+- 所有关卡生成逻辑基于 "1~4 普通关 + 第5关Boss" 的假设
+- 如果要支持 1~6 或 1~N 的动态关卡数，需要修改多个强耦合点
+
+### 当前为何只能显示 1~5
+
+**计算公式位置：** [MemoryModelCommand.cs:30](Assets/Script/Command/MemoryModelCommand.cs#L30)
+
+```csharp
+// BigStage 计算 (每5关为一个大区域)
+int BigStage = (Stage - 1) / 5 + 1;
+
+// SmallStage 计算 (当前大区域内的小关卡编号)
+int SmallStage = Stage - (BigStage - 1) * 5;
+```
+
+**示例：**
+- Stage 1 → BigStage 1, SmallStage 1
+- Stage 5 → BigStage 1, SmallStage 5 (Boss关)
+- Stage 6 → BigStage 2, SmallStage 1
+- Stage 10 → BigStage 2, SmallStage 5 (Boss关)
+
+**结论：** 公式本身支持任意 Stage 值，但 **SmallStage == 5 被硬编码为 Boss 关判定条件**。
+
+### 如果未来要支持 1~6 / 1~N，需要修改哪些地方
+
+#### 🔴 强耦合点 1：地牢生成逻辑
+
+**文件：** [GungeonCustomInput.cs:20](Assets/Script/AboutRoom/ScriptableObject/GungeonCustomInput.cs#L20)
+
+**当前代码：**
+```csharp
+protected override LevelDescriptionGrid2D GetLevelDescription() {
+    if (MemoryModelCommand.Instance.GetSmallStage() == 5) {
+        // SmallStage == 5 → Boss 关
+        selectLevelGraph = roomConfig.LevelGraphBoss;
+    } else {
+        // SmallStage 1-4 → 普通关卡
+        selectLevelGraph = roomConfig.LevelGraph;
+    }
+    // ...
+}
+```
+
+**问题：**
+- **硬编码判断 `SmallStage == 5`**
+- 如果要支持 1~6，Boss 关应该在第 6 关，但此处仍会在第 5 关触发 Boss
+
+**修改方案：**
+```csharp
+// 方案 A: 配置化 Boss 关编号
+int bossStageIndex = roomConfig.BossStageIndex; // 默认 5，可配置为 6
+if (MemoryModelCommand.Instance.GetSmallStage() == bossStageIndex) {
+    selectLevelGraph = roomConfig.LevelGraphBoss;
+}
+
+// 方案 B: 动态计算 (每个 BigStage 的最后一关为 Boss)
+int stagesPerBigStage = roomConfig.StagesPerBigStage; // 默认 5，可配置为 6
+int smallStage = MemoryModelCommand.Instance.GetSmallStage();
+if (smallStage == stagesPerBigStage) {
+    selectLevelGraph = roomConfig.LevelGraphBoss;
+}
+```
+
+**影响范围：**
+- 需要修改 `IRoomConfig` 接口，添加 `BossStageIndex` 或 `StagesPerBigStage` 字段
+- 需要在 Unity Inspector 中配置新字段
+
+---
+
+#### 🔴 强耦合点 2：BigStage / SmallStage 计算公式
+
+**文件：** [MemoryModelCommand.cs:26-30](Assets/Script/Command/MemoryModelCommand.cs#L26)
+
+**当前代码：**
+```csharp
+public int GetBigStage() {
+    return (model.Stage - 1) / 5 + 1;
+}
+
+public int GetSmallStage() {
+    return model.Stage - (GetBigStage() - 1) * 5;
+}
+```
+
+**问题：**
+- **硬编码除数 5**（每个 BigStage 固定 5 关）
+- 如果要支持每个 BigStage 6 关，公式会错误
+
+**修改方案：**
+```csharp
+// 添加配置字段
+private int stagesPerBigStage = 5; // 可配置为 6
+
+public int GetBigStage() {
+    return (model.Stage - 1) / stagesPerBigStage + 1;
+}
+
+public int GetSmallStage() {
+    return model.Stage - (GetBigStage() - 1) * stagesPerBigStage;
+}
+```
+
+**影响范围：**
+- 需要修改 `MemoryModelCommand` 添加配置字段
+- 需要提供配置接口（如从 ScriptableObject 读取）
+
+---
+
+#### 🟡 弱耦合点 3：UI 显示逻辑
+
+**文件：** [PanelBattle.cs:78](Assets/Script/Panel/BattleScene/PanelBattle.cs#L78)
+
+**当前代码：**
+```csharp
+TextMiddle.text = MemoryModelCommand.Instance.GetStageDisplayName();
+// 内部调用: return GetBigStage() + "-" + GetSmallStage();
+```
+
+**问题：**
+- UI 显示依赖 `GetSmallStage()` 的返回值
+- 如果 SmallStage 范围改为 1~6，UI 会自动适配（✅ 无需修改）
+
+**结论：** 此处为 **弱耦合**，只要 `GetSmallStage()` 返回正确值，UI 会自动显示正确。
+
+---
+
+#### 🟡 弱耦合点 4：区域名称显示
+
+**文件：** [MemoryModelCommand.cs:42](Assets/Script/Command/MemoryModelCommand.cs#L42)
+
+**当前代码：**
+```csharp
+public string GetAreaDisplayName() {
+    switch (GetBigStage()) {
+        case 1: return "教学楼";
+        case 2: return "天台";
+        case 3: return "储物间";
+        default: return "第" + GetBigStage() + "区";
+    }
+}
+```
+
+**问题：**
+- 区域名称与 BigStage 绑定，与 SmallStage 无关
+- 如果 SmallStage 改为 1~6，此处 **无需修改**（✅ 无影响）
+
+**结论：** 此处为 **弱耦合**，SmallStage 范围变化不影响区域名称。
+
+---
+
+### 哪些地方是"强耦合点"（总结）
+
+| 耦合点 | 文件 | 耦合类型 | 修改难度 | 原因 |
+|--------|------|---------|---------|------|
+| **Boss 关判定** | [GungeonCustomInput.cs:20](Assets/Script/AboutRoom/ScriptableObject/GungeonCustomInput.cs#L20) | 🔴 强耦合 | 中等 | 硬编码 `SmallStage == 5` |
+| **BigStage 计算公式** | [MemoryModelCommand.cs:26](Assets/Script/Command/MemoryModelCommand.cs#L26) | 🔴 强耦合 | 简单 | 硬编码除数 5 |
+| **SmallStage 计算公式** | [MemoryModelCommand.cs:30](Assets/Script/Command/MemoryModelCommand.cs#L30) | 🔴 强耦合 | 简单 | 硬编码除数 5 |
+| **UI 显示逻辑** | [PanelBattle.cs:78](Assets/Script/Panel/BattleScene/PanelBattle.cs#L78) | 🟡 弱耦合 | 无需修改 | 自动适配 |
+| **区域名称显示** | [MemoryModelCommand.cs:42](Assets/Script/Command/MemoryModelCommand.cs#L42) | 🟡 弱耦合 | 无需修改 | 与 SmallStage 无关 |
+
+---
+
+### 修改路线图（如果要支持 1~6）
+
+#### 最小改动方案（推荐）
+
+**步骤 1：配置化 StagesPerBigStage**
+- 在 `IRoomConfig` 添加字段 `public int StagesPerBigStage = 5;`
+- 在 Unity Inspector 中配置为 6
+
+**步骤 2：修改计算公式**
+- 修改 `MemoryModelCommand.GetBigStage()` 和 `GetSmallStage()`
+- 从 `IRoomConfig` 读取 `StagesPerBigStage` 替换硬编码的 5
+
+**步骤 3：修改 Boss 关判定**
+- 修改 `GungeonCustomInput.GetLevelDescription()`
+- 将 `if (SmallStage == 5)` 改为 `if (SmallStage == roomConfig.StagesPerBigStage)`
+
+**预计工作量：** 1-2 小时
+
+---
+
+#### 完整改动方案（支持每个 BigStage 不同关卡数）
+
+如果需要更灵活的配置（例如 BigStage 1 有 6 关，BigStage 2 有 5 关）：
+
+**步骤 1：创建 BigStageConfig**
+```csharp
+[Serializable]
+public class BigStageConfig {
+    public int BigStageIndex;
+    public int StagesCount;
+    public LevelGraph[] LevelGraphs;
+    public LevelGraph LevelGraphBoss;
+}
+```
+
+**步骤 2：重构 MemoryModelCommand**
+- 添加 `GetStagesPerBigStage(int bigStage)` 方法
+- 从配置表读取每个 BigStage 的关卡数
+
+**步骤 3：重构 GungeonCustomInput**
+- 根据 BigStage 动态选择 LevelGraph
+
+**预计工作量：** 4-6 小时
+
+---
+
+### 当前 UI 实验的影响范围
+
+**2026-01-15 实验改动：**
+- 文件：[PanelBattle.cs:78-83](Assets/Script/Panel/BattleScene/PanelBattle.cs#L78)
+- 改动：将 `TextMiddle.text` 强制显示为 `"{BigStage}-6"`
+- 影响：**仅 UI 显示层**，不影响任何游戏逻辑
+
+**验证方法：**
+- ✅ Boss 关仍在 SmallStage 5 触发（未改变）
+- ✅ 地牢生成逻辑未改变
+- ✅ Stage 计算公式未改变
+- ❌ UI 显示与真实 SmallStage 不一致（预期行为）
+
+**回滚方法：**
+```csharp
+// 恢复原代码（删除 78-83 行，恢复为）
+TextMiddle.text = MemoryModelCommand.Instance.GetStageDisplayName();
+lastBigStage = MemoryModelCommand.Instance.GetBigStage();
+ShowAreaName();
+```
+
+---
+
+### 结论
+
+**SmallStage 1~5 的限制是架构级约束，涉及 3 个强耦合点：**
+1. 🔴 Boss 关判定（GungeonCustomInput）
+2. 🔴 BigStage 计算公式（MemoryModelCommand）
+3. 🔴 SmallStage 计算公式（MemoryModelCommand）
+
+**如果要支持 1~6 或动态关卡数：**
+- 最小改动：1-2 小时（配置化 + 修改 3 个强耦合点）
+- 完整改动：4-6 小时（支持每个 BigStage 不同关卡数）
+
+**当前 UI 实验不影响任何游戏逻辑，可安全回滚。**

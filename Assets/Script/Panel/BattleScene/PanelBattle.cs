@@ -75,8 +75,11 @@ namespace BattleScene
                     GameMediator.Instance.GetController<PlayerController>().Player.EnterBattleScene();
                     GameMediator.Instance.GetController<PlayerController>().Player.m_Attr.isRun = true;
                 }, (float)TimeLine.duration);
-                TextMiddle.text = MemoryModelCommand.Instance.GetStageDisplayName();
-                lastBigStage = MemoryModelCommand.Instance.GetBigStage();
+                // TEMP: UI-only experiment, real SmallStage still 1~5
+                // Original: TextMiddle.text = MemoryModelCommand.Instance.GetStageDisplayName();
+                int bigStage = MemoryModelCommand.Instance.GetBigStage();
+                TextMiddle.text = bigStage + "-6";  // Force display as X-6 for UI testing
+                lastBigStage = bigStage;
                 ShowAreaName();
             }
         }

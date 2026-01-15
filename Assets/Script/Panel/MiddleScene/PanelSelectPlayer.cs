@@ -112,6 +112,11 @@ namespace MiddleScene
                     EnterPanel(typeof(PanelBattle));
                     CameraUtility.Instance.ChangeActiveCamera(CameraType.FollowCamera);
                     EventCenter.Instance.NotisfyObserver(EventType.OnFinishSelectPlayer);
+
+                    // FIX: Write PlayerAttr to MemoryModel before entering BattleScene
+                    // This ensures the selected character (e.g., Teacher) is preserved when ToBattleRoom triggers
+                    ModelContainer.Instance.GetModel<MemoryModel>().PlayerAttr = m_Attr;
+
                     GameMediator.Instance.GetController<PlayerController>().SetPlayer(m_Attr);
 
                     Title.GetComponent<RectTransform>().DOAnchorPosY(55, 0.3f);
